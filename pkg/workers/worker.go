@@ -1,7 +1,8 @@
 package workers
 
 import (
-	"fmt"
+	"context"
+	"log"
 
 	"src/pkg/model"
 	registry "src/pkg/processors/registry"
@@ -11,61 +12,75 @@ import (
 
 type Worker struct {
 	id       int
-	queue    *taskQueue.Queue
+	queue    *taskQueue.TaskQueue
 	registry *registry.Registry
-	stopCh   chan struct{}
+	ctx      context.Context
+	cancel   context.CancelFunc
 }
 
-func NewWorker(id int, queue *taskQueue.Queue, registry *registry.Registry) Worker {
+func NewWorker(id int, queue *taskQueue.TaskQueue, registry *registry.Registry) Worker {
+	ctx, cancel := context.WithCancel(context.Background())
 	return Worker{
 		id:       id,
 		queue:    queue,
 		registry: registry,
-		stopCh:   make(chan struct{}),
+		ctx:      ctx,
+		cancel:   cancel,
 	}
 }
-
 func (w *Worker) Start() {
-	fmt.Printf("Starting worker %d...\n", w.id)
+	w.run()
+}
+
+func (w *Worker) run() {
+	log.Printf("Worker %d: run() started\n", w.id)
 
 	for {
 		select {
-		case <-w.stopCh:
-			fmt.Printf("Stop worker %d...\n", w.id)
+		case <-w.ctx.Done():
+			log.Printf("Worker %d: context cancelled\n", w.id)
 			return
 		default:
-			if task, hasTask := w.queue.GetTask(); hasTask {
-				w.processTask(task)
-			} else {
-				time.Sleep(100 * time.Millisecond)
+			log.Printf("Worker %d: waiting for task\n", w.id)
+			task, err := w.queue.GetTask()
+			if err != nil {
+				log.Printf("Worker %d: error getting task: %v\n", w.id, err)
+				return
 			}
+			log.Printf("Worker %d: got task %s\n", w.id, task.GetID())
+			w.processTask(*task)
 		}
 	}
 }
 
-func (w *Worker) Stop() {
-	close(w.stopCh)
+func (w *Worker) processTask(task model.PriorityTask) {
+	log.Printf("Worker %d processing task %s (priority: %d)\n",
+		w.id, task.ID, task.GetPriority())
+
+	processor, err := w.registry.GetProcessor(task.GetTaskType())
+	if err != nil {
+		log.Printf("Worker %d: No processor for task type %s\n", w.id, task.GetTaskType())
+		return
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- processor.ProcessTask(task)
+	}()
+
+	select {
+	case err := <-done:
+		if err != nil {
+			log.Printf("Worker %d: Task %s failed: %v\n", w.id, task.GetID(), err)
+		} else {
+			log.Printf("Worker %d: Task %s completed\n", w.id, task.GetID())
+		}
+	case <-time.After(5 * time.Second):
+		log.Printf("Worker %d: Task %s timed out\n", w.id, task.GetID())
+	}
 }
 
-func (w *Worker) processTask(t any) {
-	defer w.queue.TaskCompleted()
-
-	task, ok := t.(model.TaskData)
-
-	if !ok {
-		fmt.Printf("Worker: %d. Failed to process %T\n", w.id, t)
-		return
-	}
-
-	taskType := task.GetTaskType()
-	processor, err := w.registry.GetProcessor(taskType)
-
-	if err != nil {
-		fmt.Printf("Worker: %d. No processor for the task type %s\n", w.id, taskType)
-		return
-	}
-
-	if err := processor.ProcessTask(task); err != nil {
-		fmt.Printf("Worker %d. Failed to process task: %v\n", w.id, err)
-	}
+func (w *Worker) Stop() {
+	log.Println("Stopping")
+	w.cancel()
 }

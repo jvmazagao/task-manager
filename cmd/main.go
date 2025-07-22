@@ -11,7 +11,7 @@ import (
 )
 
 func main() {
-	queue := taskQueue.NewTaskQueue(10)
+	queue := taskQueue.New(10)
 	registry := registry.NewRegistry()
 	registry.AddProcessor("send_email", &email.EmailProcessor{})
 
@@ -20,12 +20,12 @@ func main() {
 	wp.Start()
 
 	for i := 0; i < 10; i++ {
-		task := email.EmailTask{
+		task := &model.PriorityTask{
 			Task: model.Task{
 				ID:   fmt.Sprintf("email-%d", i),
-				Type: "send_email",
+				Type: "any",
 			},
-			Receiver: fmt.Sprintf("user%d@example.com", i),
+			Priority: i % 3,
 		}
 		queue.AddTask(task)
 	}

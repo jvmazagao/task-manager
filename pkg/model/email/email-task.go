@@ -3,7 +3,7 @@ package email
 import "src/pkg/model"
 
 type EmailTask struct {
-	model.Task
+	model.PriorityTask
 	Receiver string
 	Sender   string
 	Subject  string

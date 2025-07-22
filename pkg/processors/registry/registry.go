@@ -23,5 +23,7 @@ func (r *Registry) GetProcessor(processorType string) (processors.TaskProcessor,
 		return processor, nil
 	}
 
-	return nil, fmt.Errorf("Missing processor for type %s", processorType)
+	fmt.Println("Processing with default processor")
+
+	return processors.DefaulProcessor{}, nil
 }

@@ -1,60 +1,48 @@
 package queue
 
 import (
-	"fmt"
-	"sync"
-	"sync/atomic"
+	"errors"
+	"src/pkg/model"
 )
 
-type Queue struct {
-	tasks          chan any
-	activeTasks    sync.WaitGroup
-	isShuttingDown atomic.Bool
-	lock           sync.Mutex
+type TaskQueue struct {
+	pq       *SafePriorityQueue
+	capacity int
 }
 
-func NewTaskQueue(bufferSize int) Queue {
-	return Queue{tasks: make(chan any, bufferSize)}
-}
-
-func (q *Queue) AddTask(task any) error {
-	if q.isShuttingDown.Load() {
-		return fmt.Errorf("Queue is shutting down. No accepting more tasks")
-	}
-	select {
-	case q.tasks <- task:
-		q.activeTasks.Add(1)
-		return nil
-	default:
-		return fmt.Errorf("queue is full")
+func New(capacity int) TaskQueue {
+	return TaskQueue{
+		pq:       NewSafePriorityQueue(),
+		capacity: 10,
 	}
 }
 
-func (q *Queue) GetTask() (any, bool) {
-	select {
-	case task := <-q.tasks:
-		return task, true
-	default:
-		return nil, false
+func (tq *TaskQueue) Close() {
+	tq.pq.Close()
+}
+
+func (tq *TaskQueue) AddTask(task interface{}) error {
+
+	if tq.pq.items.Len() >= tq.capacity {
+		return errors.New("Task queue on max capacity")
 	}
+
+	priorityTask, ok := any(task).(*model.PriorityTask)
+	if !ok {
+		taskVal, ok := any(task).(*model.Task)
+		if !ok {
+			return errors.New("Task not supported")
+		}
+		priorityTask = &model.PriorityTask{
+			Task:     *taskVal,
+			Priority: 1000,
+		}
+	}
+
+	tq.pq.Push(priorityTask)
+	return nil
 }
 
-func (q *Queue) TaskCompleted() {
-	q.activeTasks.Done()
-}
-
-func (q *Queue) StartShutdown() {
-	q.isShuttingDown.Store(true)
-}
-
-func (q *Queue) WaitForTasks() {
-	q.activeTasks.Wait()
-}
-
-func (q *Queue) IsEmpty() bool {
-	return len(q.tasks) == 0
-}
-
-func (q *Queue) RemainingTasks() int {
-	return len(q.tasks)
+func (tq *TaskQueue) GetTask() (*model.PriorityTask, error) {
+	return tq.pq.Pop()
 }
