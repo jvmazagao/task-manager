@@ -15,17 +15,14 @@ type Worker struct {
 	queue    *taskQueue.TaskQueue
 	registry *registry.Registry
 	ctx      context.Context
-	cancel   context.CancelFunc
 }
 
-func NewWorker(id int, queue *taskQueue.TaskQueue, registry *registry.Registry) Worker {
-	ctx, cancel := context.WithCancel(context.Background())
+func NewWorker(id int, queue *taskQueue.TaskQueue, registry *registry.Registry, ctx context.Context) Worker {
 	return Worker{
 		id:       id,
 		queue:    queue,
 		registry: registry,
 		ctx:      ctx,
-		cancel:   cancel,
 	}
 }
 func (w *Worker) Start() {
@@ -81,6 +78,5 @@ func (w *Worker) processTask(task model.PriorityTask) {
 }
 
 func (w *Worker) Stop() {
-	log.Println("Stopping")
-	w.cancel()
+	w.ctx.Done()
 }

@@ -30,5 +30,5 @@ func main() {
 		queue.AddTask(task)
 	}
 
-	wp.GracefulShutdown()
+	wp.Stop()
 }
